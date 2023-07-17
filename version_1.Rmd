@@ -1,0 +1,478 @@
+---
+title: "Project 2"
+author: "Javeria Fiaz"
+date: "2023-06-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Delete Environment
+```{r clear environment}
+rm(list = ls())
+rm()
+```
+
+## R Libraries
+Load libraries
+
+```{r libraries}
+library(readr)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+```
+
+## R CSV Files
+Upload CSV Files
+
+```{r upload csv data}
+df_order_item <- read_csv("F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/R code/Maven_csv/order_item.csv")
+df_order_item_refund <- read_csv("F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/R code/Maven_csv/order_item_refund.csv")
+df_orders <- read_csv("F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/R code/Maven_csv/orders.csv")
+df_products <- read_csv("F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/R code/Maven_csv/products.csv")
+df_website_sessions <- read_csv("F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/R code/Maven_csv/website _sessions.csv")
+df_website_pageviews <- read_csv("F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/R code/Maven_csv/website_pageviews.csv")
+```
+
+
+## Sample: save as cSV file
+```{r}
+write.csv(website_session_t1, file = "I:/DATA ANALYST/Portfolio Project 2/csv/website_session_t1.csv", row.names = FALSE)
+```
+
+
+## R Code
+Total Sessions and users by utm_source and utm_campaign
+```{r utm_url}
+df_website_sessions |> 
+group_by(utm_source,utm_campaign) |> 
+summarise(total_sessions = n_distinct(website_session_id),
+          total_users = n_distinct(user_id)) |> 
+arrange(desc(total_sessions)) |>
+  view()-> utm_url
+
+```
+
+New and Repeated Customers
+```{r}
+# Number of sessions for each user
+df_website_sessions |> 
+  group_by(user_id)  |> 
+  summarize(total_sessions = n()) -> user_sessions 
+
+user_sessions  |> 
+  filter(total_sessions == 1)  |> 
+  summarise(count = n()) -> new_customers
+
+user_sessions  |> 
+  filter(total_sessions > 1)  |> 
+  summarise(count = n()) -> repeat_customers
+
+View(new_customers)
+View(repeat_customers)
+
+```
+
+## UTM_Source
+
+Total users and total sessions by each source
+```{r}
+df_website_sessions |> 
+  group_by(utm_source) |> 
+  summarise(total_sessions = n_distinct(website_session_id),
+            total_user = n_distinct(user_id)) |>
+ view()-> utm_source
+
+write.csv(utm_source , file = 
+            "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/utm_source.csv", row.names = FALSE)
+
+```
+
+Most used device_type by each source
+````{r}
+# Most used device_type by each source
+df_website_sessions |> 
+  group_by(utm_source, device_type) |>
+  summarise(
+   device_used = table(device_type)) -> s_device 
+  view()
+  
+write.csv(s_device  , file = 
+            "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/s_device.csv", row.names = FALSE)
+  
+```
+
+New and Repeated customer by each source
+```{r}
+# Add a column for yaer
+#df_website_sessions$years <- format(df_website_sessions$created_at, "%Y")
+
+# Number of sessions for each user
+s_user_sessions <- df_website_sessions |> 
+  group_by(user_id)  |> 
+  summarize(total_sessions = n())  |> 
+  left_join(
+    df_website_sessions |> 
+      group_by(user_id) |> 
+      summarize(utm_sources = paste(unique(utm_source), collapse = ", ")),
+    by = "user_id"
+  )
+
+# New customers (users with only one session)
+s_new_customers <- s_user_sessions |> 
+  filter(utm_sources %in% c("NULL", "gsearch", "bsearch", "socialbook")) |> 
+  group_by(utm_sources) |> 
+  summarize(new_users = sum(total_sessions == 1)) 
+
+write.csv(s_new_customers , file = 
+            "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/s_new_customers.csv", row.names = FALSE)
+
+
+# Repeat customers (users with more than one session)
+s_repeat_customers <- s_user_sessions |> 
+  filter(utm_sources %in% c("NULL", "gsearch", "bsearch", "socialbook")) |> 
+  group_by(utm_sources) |> 
+  summarize(repeat_users = sum(total_sessions > 1))
+
+write.csv(s_repeat_customers , file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/s_repeat_customers.csv", row.names = FALSE)
+
+```
+
+
+Traffic to order conversion for utm_source
+```{r}
+# Conversion Rate = (Total number of conversions / Total number of sessions)
+# For example, if you had 50 conversions from 1,000 interactions, your conversion rate would be 5%, since 50 ÷ 1,000 = 5%.
+# Higher CVR indicates that a higher percentage of website visitors or users are taking the desired action (such as making a purchase, signing up, or submitting a form)
+
+df_website_sessions  |> 
+  left_join(df_orders, by = "website_session_id")  |> 
+  group_by(utm_source)  |> 
+  summarize(
+    sessions = n_distinct(website_session_id),
+    orders = n_distinct(order_id),
+    session_order_CVR = round((n_distinct(order_id) / n_distinct(website_session_id)*100), 1)
+  )  |> 
+  arrange(desc(session_order_CVR)) -> s_traffic_order_cvr 
+
+write.csv(s_traffic_order_cvr , file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/s_traffic_order_cvr.csv", row.names = FALSE)
+
+```
+
+Bounce Rate for utm_source
+```{r}
+df_website_pageviews %>%
+  inner_join(df_website_sessions, by = "website_session_id") %>%
+  group_by(utm_source, website_session_id) %>%
+  summarise(pageviews = n_distinct(pageview_url)) %>%
+  group_by(utm_source) %>%
+  summarise(single_page = sum(pageviews == 1),
+            bounce_rate = single_page / n() * 100) -> s_bounce_rate
+  View()
+  
+  write.csv(s_bounce_rate, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/s_bounce_rate.csv", row.names = FALSE)
+
+```
+
+Show Traffic by each source
+```{r for haet map display}
+df_website_sessions  |> 
+  mutate(hour = hour(created_at),
+         hour_12 = format(created_at, "%I %p")) |> 
+  group_by(utm_source, hour_12)  |> 
+  summarize(count = n()) -> s_traffic_time
+  
+  
+write.csv(s_traffic_time, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/s_traffic_time.csv", row.names = FALSE)
+
+```
+
+## UTM_Campaign
+
+Total users and total sessions by each campaign
+```{r}
+df_website_sessions |> 
+  group_by(utm_campaign) |> 
+  summarise(total_sessions = n_distinct(website_session_id),
+            total_user = n_distinct(user_id)) -> utm_campaign
+ view()
+
+write.csv(utm_campaign, file = 
+            "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/utm_campaign.csv", row.names = FALSE)
+
+```
+
+Most used device_type by each campaign
+````{r}
+# Most used device_type by each campaign
+df_website_sessions |> 
+  group_by(utm_campaign, device_type) |>
+  summarise(
+   device_used = table(device_type)) -> c_device 
+  view()
+  
+write.csv(c_device  , file = 
+            "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/c_device.csv", row.names = FALSE)
+  
+```
+
+New and Repeated customer by each campaign
+```{r}
+
+# Number of sessions for each user
+df_website_sessions |> 
+  group_by(user_id)  |> 
+  summarize(total_sessions = n())  |> 
+  left_join(
+    df_website_sessions |> 
+      group_by(user_id) |> 
+      summarize(utm_campaigns = paste(unique(utm_campaign), collapse = ", ")),
+    by = "user_id"
+  ) -> c_user_sessions 
+
+# New customers (users with only one campaign)
+c_user_sessions |> 
+  filter(utm_campaigns %in% c("nonbrand", "brand", "NULL", "desktop_targeted", "pilot")) |>
+  group_by(utm_campaigns) |> 
+  summarize(new_users = sum(total_sessions == 1)) -> c_new_customers
+
+write.csv(c_new_customers, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/c_new_customers.csv", row.names = FALSE)
+
+
+# Repeat customers (users with more than one campaign)
+c_user_sessions |> 
+  filter(utm_campaigns %in% c("nonbrand", "brand", "NULL", "desktop_targeted", "pilot")) |>
+  group_by(utm_campaigns) |> 
+  summarize(repeat_users = sum(total_sessions > 1)) -> c_repeat_customers
+
+write.csv(c_repeat_customers, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/c_repeat_customers.csv", row.names = FALSE)
+
+```
+
+Traffic to order conversion for utm_campaign
+```{r}
+c_traffic_order_cvr <- df_website_sessions %>%
+  left_join(df_orders, by = "website_session_id") %>%
+  group_by(utm_campaign) %>%
+  summarize(
+    sessions = n_distinct(website_session_id),
+    orders = n_distinct(order_id),
+    session_order_CVR = round((n_distinct(order_id) / n_distinct(website_session_id)*100), 1)
+  ) %>%
+  arrange(desc(session_order_CVR))
+
+print(c_traffic_order_cvr)
+
+write.csv(c_traffic_order_cvr, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/c_traffic_order_cvr.csv", row.names = FALSE)
+
+```
+
+Bounce Rate for utm_campaign
+```{r}
+df_website_pageviews %>%
+  inner_join(df_website_sessions, by = "website_session_id") %>%
+  group_by(utm_campaign, website_session_id) %>%
+  summarise(pageviews = n_distinct(pageview_url)) %>%
+  group_by(utm_campaign) %>%
+  summarise(single_page = sum(pageviews == 1),
+            bounce_rate = single_page / n() * 100) -> c_bounce_rate
+  View()
+  
+write.csv(c_bounce_rate, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/c_bounce_rate.csv", row.names = FALSE)
+
+```
+
+Show Traffic by each campaign
+```{r for haet map display}
+df_website_sessions  |> 
+  mutate(hour = hour(created_at),
+         hour_12 = format(created_at, "%I %p")) |> 
+  group_by(utm_campaign, hour_12)  |> 
+  summarize(count = n()) -> c_traffic_time
+  
+  
+write.csv(c_traffic_time, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/c_traffic_time.csv", row.names = FALSE)
+
+```
+
+## Content
+
+Total users and total sessions by each content
+```{r}
+df_website_sessions |> 
+  group_by(utm_content) |> 
+  summarise(total_sessions = n_distinct(website_session_id),
+            total_user = n_distinct(user_id)) -> utm_content
+ view()
+
+write.csv(utm_content, file = 
+            "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/utm_content.csv", row.names = FALSE)
+
+```
+
+Most used device_type by each content
+````{r}
+# Most used device_type by each content
+df_website_sessions |> 
+  group_by(utm_content, device_type) |>
+  summarise(
+   device_used = table(device_type)) -> con_device 
+  view()
+  
+write.csv(con_device, file = 
+            "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/con_device.csv", row.names = FALSE)
+  
+```
+
+Traffic to order conversion for utm_content
+```{r}
+con_traffic_order_cvr <- df_website_sessions %>%
+  left_join(df_orders, by = "website_session_id") %>%
+  group_by(utm_content) %>%
+  summarize(
+    sessions = n_distinct(website_session_id),
+    orders = n_distinct(order_id),
+    session_order_CVR = round((n_distinct(order_id) / n_distinct(website_session_id)*100), 1)
+  ) %>%
+  arrange(desc(session_order_CVR))
+
+print(con_traffic_order_cvr)
+
+write.csv(con_traffic_order_cvr, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/con_traffic_order_cvr.csv", row.names = FALSE)
+
+```
+
+Show Traffic by each content
+```{r for haet map display}
+df_website_sessions  |> 
+  mutate(hour = hour(created_at),
+         hour_12 = format(created_at, "%I %p")) |> 
+  group_by(utm_content, hour_12)  |> 
+  summarize(count = n()) -> con_traffic_time
+  
+  
+write.csv(con_traffic_time, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/con_traffic_time.csv", row.names = FALSE)
+
+```
+
+## Categorize: use of devices by utm_content per quarter of year
+```{r}
+df_website_sessions |> 
+  mutate(yr = year(created_at),
+         mon = months(created_at)) |> 
+  group_by(yr, mon, utm_content, device_type) |> 
+  summarise(
+   device_used = table(device_type)) -> con_device_yr_mon
+  view()
+  
+
+write.csv(con_device_yr_mon, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/con_device_yr_mon.csv", row.names = FALSE)
+
+```
+
+
+## Analyzing quarterly session to revenue per order 
+```{r}
+
+df_orders |> 
+  mutate(yr = year(created_at),
+         qtr = quarter(created_at)) |> 
+  group_by(yr, qtr)  |> 
+  summarize(revenue_per_order = round(sum(price_usd) / n_distinct(df_orders$order_id), 2),
+    revenue_per_user =  round(sum(price_usd)/ n_distinct(user_id), 2)
+    ) -> revenue_per_ord_usr
+
+write.csv(revenue_per_ord_usr, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/revenue_per_ord_usr.csv", row.names = FALSE)
+
+```
+
+Order by time
+```{r}
+df_orders |> 
+  mutate(hour_12 = format(created_at, "%I %p"),
+         created_at = as.Date(created_at),
+         yr = year(created_at),
+         mon = months(created_at), 
+         date = day(created_at),
+         day_in_week = weekdays(created_at)
+         ) |> 
+  group_by(date, hour_12, day_in_week, mon, yr) |> 
+  summarize(count = n()) -> order_by_time
+  view()
+  
+  write.csv(order_by_time, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/order_by_time.csv", row.names = FALSE)
+  
+  
+  
+  df_orders |> 
+  mutate(hour_12 = format(created_at, "%I %p"),
+         created_at = as.Date(created_at),
+         yr = year(created_at),
+         mon = months(created_at), 
+         date = day(created_at),
+         day_in_week = weekdays(created_at)
+         ) |> 
+  group_by(date, mon) |> 
+  summarize(count = n()) |> 
+    view()
+  
+    df_orders |> 
+  mutate(hour_12 = format(created_at, "%I %p"),
+         created_at = as.Date(created_at),
+         yr = year(created_at),
+         mon = months(created_at), 
+         date = day(created_at),
+         day_in_week = weekdays(created_at)
+         ) |> 
+  group_by(hour_12, day_in_week) |> 
+  summarize(count = n()) |> 
+    view()
+  
+         
+```
+
+
+## Revenue by product and year
+```{r}
+
+revenue_by_product_ <- df_order_item %>%
+  mutate(created_at = as.Date(created_at)) %>%
+  group_by(yr = year(created_at), mo = month(created_at)) %>%
+  summarize(mrfuzzy_rev = sum(ifelse(product_id == 1, price_usd, 0)),
+            lovebear_rev = sum(ifelse(product_id == 2, price_usd, 0)),
+            birthdaybear_rev = sum(ifelse(product_id == 3, price_usd, 0)),
+            minibear_rev = sum(ifelse(product_id == 4, price_usd, 0)),
+            total_revenue = sum(price_usd),
+            total_margin = sum(price_usd - cogs_usd)) %>%
+  arrange(yr, mo)
+
+ write.csv(revenue_by_product_, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/revenue_by_product.csv", row.names = FALSE)
+
+```
+
+```{r}
+
+df_order_item %>%
+  mutate( created_at = as.Date(created_at),
+         yr = year(created_at),
+         mon = months(created_at), 
+    product_name = case_when(
+      product_id == 1 ~ "mrfuzzy",
+      product_id == 2 ~ "lovebear",
+      product_id == 3 ~ "birthdaybear",
+      product_id == 4 ~ "minibear",
+    )
+  )|> 
+  group_by(product_name, yr,mon) |> 
+  summarise(expense = sum(cogs_usd),
+            income = sum(price_usd),
+            gain = sum(price_usd - cogs_usd) ) -> by_product
+
+ write.csv(by_product, file = "F:/JAVERIA FIAZ/June 2023/Portfolio Project 2/csv/by_product.csv", row.names = FALSE)
+
+
+```
